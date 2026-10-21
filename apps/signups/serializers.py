@@ -78,6 +78,7 @@ class MySignupSerializer(serializers.ModelSerializer):
     status_text = serializers.CharField(source="get_status_display", read_only=True)
     queue_position = serializers.SerializerMethodField()
     checked_in_at = serializers.SerializerMethodField()
+    checkin_method_text = serializers.SerializerMethodField()
 
     class Meta:
         model = Signup
@@ -90,6 +91,7 @@ class MySignupSerializer(serializers.ModelSerializer):
             "signup_at",
             "cancel_at",
             "checked_in_at",
+            "checkin_method_text",
             "activity",
         ]
 
@@ -108,6 +110,10 @@ class MySignupSerializer(serializers.ModelSerializer):
     def get_checked_in_at(self, obj):
         record = getattr(obj, "checkin_record", None)
         return record.checkin_at.isoformat() if record else None
+
+    def get_checkin_method_text(self, obj):
+        record = getattr(obj, "checkin_record", None)
+        return record.get_method_display() if record else None
 
 
 class CheckinRequestSerializer(serializers.Serializer):

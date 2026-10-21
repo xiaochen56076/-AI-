@@ -184,3 +184,40 @@ python manage.py run_scheduled_tasks: 正常执行
 ```
 
 覆盖点：报名/候补/转正通知、活动取消通知、审核通过/驳回通知、通知筛选与已读、越权读取拦截、开场提醒幂等与已签到跳过、过期活动自动结束与爽约/候补处理、无需签到活动不误标爽约、活动统计计数与比率、人群分布、看板权限、全站趋势与热门分类、分类标签新增/停用与重复校验。
+
+## 2026-10-21 · Vue 3 全流程前端
+
+### 做了什么
+
+- 搭建 Vite 7 + Vue 3 + TypeScript 严格模式工程，配置 `/api` 代理、路径别名、`vue-tsc` 类型检查与生产构建。
+- 统一请求层：Axios 实例自动注入 Bearer、`code !== 0` 转业务错误、401 单飞刷新令牌、失败统一 toast，并对 blob 响应解析 JSON 错误体。
+- 状态层：`auth`（登录/注册/引导恢复/登出黑名单/权限判定/工作台入口）、`notifications`（未读轮询、全部已读、静默失败）。
+- 路由守卫按 `requiresAuth / guestOnly / permissions` 拦截，未授权跳 `/forbidden`，兜底 `/:pathMatch(.*)*` 走 404。
+- 学生端 12 个视图：首页、活动广场（分类/关键词/范围/排序 + 分页）、活动详情（报名、候补、收藏、审核轨迹、主办方工作区）、我的报名（分组标签页）、我的收藏、消息中心、扫码签到、个人中心（资料 + 改密）、登录、注册、403、404。
+- 主办方端：我的活动（状态页签 + 搜索）、创建/编辑活动（已发布白名单锁定关键字段）、报名名单（统计 + CSV 导出）、签到管理（动态码二维码每 30 秒刷新 + 手动补签）、活动数据看板（4 张图表 + 洞察）。
+- 管理端：工作台（按权限渲染卡片与平台指标）、审核工作台（通过/驳回抽屉、驳回必填意见）、全站看板（近 8 周趋势、状态分布、热门分类、转化漏斗）、用户管理（角色分配与禁用）、字典管理（分类/标签排序、启停）。
+- 新增 `seed_demo_data` 演示数据命令，产出 19 场活动、94 条报名、88 条通知，覆盖全部状态与候补/签到场景，支持 `--reset` 幂等重建。
+- 修复自测中发现的体验问题：登录/注册按钮与表单提交双触发导致重复请求、注册撞库返回 500、失效的「记住登录状态」勾选、页脚主办方入口对已登录用户仍指向登录页、首页分类数量硬编码、我的报名缺少签到方式展示。
+
+### 改动位置
+
+- 工程与配置：`web/vite.config.ts`、`web/tsconfig*.json`、`web/index.html`、`web/package.json`
+- 请求与类型：`web/src/api/http.ts`、`web/src/api/{auth,activities,signups,notifications,analytics,admin}.ts`、`web/src/types/index.ts`
+- 状态与路由：`web/src/stores/auth.ts`、`web/src/stores/notifications.ts`、`web/src/router/index.ts`
+- 布局与组件：`web/src/layouts/{PublicLayout,ConsoleLayout,AuthLayout}.vue`、`web/src/components/{ActivityCard,StatCard,EChart,UserAvatar,EmptyState}.vue`、`web/src/styles/main.css`
+- 学生端：`web/src/views/public/*`、`web/src/views/auth/*`、`web/src/utils/{format,checkin}.ts`
+- 工作台：`web/src/views/console/ConsoleHomeView.vue`、`Organizer*View.vue`、`Admin*View.vue`、`AuditView.vue`
+- 后端配合改动：`apps/signups/serializers.py`、`apps/signups/repositories.py`（我的报名补充签到方式）、`apps/accounts/services.py`（学号唯一冲突返回 400 而非 500）
+- 演示数据：`apps/activities/management/commands/seed_demo_data.py`
+- 文档：`README.md`（前端启动、演示数据与账号、测试门槛）
+
+### 验证
+
+```text
+python -m pytest: 61 passed
+python -m ruff check: All checks passed
+npm run typecheck (vue-tsc -b): 无错误
+npm run build: 成功，产物 web/dist
+浏览器实测：12 个学生端/工作台页面在真实种子数据下渲染正常，登录→报名（3/16 → 4/16）→候补（第 4 位）→取消（候补 4 → 3）、消息全部已读、名单导出 CSV（表头 + 12 行，含 BOM）、审核通过/驳回、字典启停均已验证
+动态码签到实测：主办方取码 → 学生 `/checkin` 手动输入 8 位码 → 返回「签到成功」卡片（姓名/学号/签到时间/签到方式/当前已签到 1 人）
+```

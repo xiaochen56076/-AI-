@@ -400,6 +400,10 @@ def test_dynamic_code_and_scan_checkin_success(
     assert detail["checked_in_count"] == 1
     assert detail["my_signup"]["checked_in"] is True
 
+    mine = auth_client.get("/api/v1/my/signups", {"group": "attended"}).json()["data"]
+    assert mine["results"][0]["checked_in_at"]
+    assert mine["results"][0]["checkin_method_text"] == "扫码签到"
+
 
 def test_checkin_rejects_tampered_and_expired_codes(
     organizer_user, organizer_client, auth_client

@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -8,7 +8,10 @@ from .models import Role, User
 @transaction.atomic
 def register_student(validated_data: dict) -> User:
     roles_data = validated_data.pop("roles", None)
-    user = User.objects.create_user(**validated_data)
+    try:
+        user = User.objects.create_user(**validated_data)
+    except IntegrityError:
+        raise ValidationError({"student_no": "该学号已注册"}) from None
     student_role = Role.objects.filter(code=User.RoleCode.STUDENT).first()
     if student_role:
         user.roles.add(student_role)

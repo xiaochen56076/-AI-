@@ -14,7 +14,7 @@ CampusHub 将校园活动的「发布 — 审核 — 报名 — 签到 — 复�
 | 站内通知、审核/报名/候补/提醒消息 | 已完成 |
 | 活动数据看板、全站看板、分类标签字典管理 | 已完成 |
 | 活动自动结束、爽约标记、开场提醒定时任务 | 已完成 |
-| Vue 3 学生端 / 主办方端 / 管理端 | 待开发 |
+| Vue 3 学生端 / 主办方端 / 管理端 | 已完成 |
 
 详细变更与测试记录见 [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md)。
 
@@ -24,7 +24,7 @@ CampusHub 将校园活动的「发布 — 审核 — 报名 — 签到 — 复�
 - SimpleJWT（Access 2 小时 / Refresh 7 天，登出黑名单）
 - bcrypt 密码哈希、MySQL 8 / SQLite 双数据库配置
 - Redis 缓存（可选）、Celery（可选）；未启用 Redis 时使用本地缓存与数据库任务
-- Vue 3、TypeScript、Vite、Element Plus、Pinia、ECharts（前端开发中）
+- Vue 3、TypeScript、Vite 7、Element Plus 2.13、Pinia 3、Vue Router 4、ECharts 5、qrcode / qr-scanner
 
 ## 本地启动
 
@@ -46,6 +46,25 @@ python manage.py runserver
 
 默认开发环境使用 SQLite，无需数据库服务。设置 `DB_ENGINE=mysql` 后启用 MySQL；设置 `REDIS_URL` 后自动启用 Redis 缓存。
 
+### 前端
+
+```bash
+cd web
+npm install
+npm run dev          # http://localhost:5173，/api 代理到 127.0.0.1:8000
+npm run typecheck    # vue-tsc 严格类型检查
+npm run build        # 产物输出到 web/dist
+```
+
+### 演示数据
+
+```bash
+python manage.py seed_demo_data            # 生成 19 场活动、4 类角色与完整报名签到链路
+python manage.py seed_demo_data --reset    # 先清理旧的演示数据再重建
+```
+
+演示账号统一密码 `Campushub@2026`：管理员 `20210001`、审核员 `20190001`、主办方 `20220101`/`20220102`/`20220103`、学生 `20220201`–`20220218`。
+
 未部署 Celery 时，可通过管理命令执行活动结束、爽约标记与开场提醒：
 
 ```bash
@@ -59,9 +78,10 @@ python manage.py run_scheduled_tasks
 ```bash
 python -m pytest
 python -m ruff check .
+cd web && npm run typecheck && npm run build
 ```
 
-测试覆盖统一响应、请求 ID、注册登录、令牌刷新与登出失效、个人资料、RBAC 越权拦截、管理员用户管理、活动状态流转、审核权限、活动编辑边界、检索筛选、收藏、报名候补、并发防超卖、动态签到码、手动补签、站内通知、提醒幂等、爽约标记、活动/全站统计与字典管理等。
+测试覆盖统一响应、请求 ID、注册登录、令牌刷新与登出失效、个人资料、RBAC 越权拦截、管理员用户管理、活动状态流转、审核权限、活动编辑边界、检索筛选、收藏、报名候补、并发防超卖、动态签到码、手动补签、站内通知、提醒幂等、爽约标记、活动/全站统计与字典管理等。前端以 `vue-tsc` 严格类型检查与生产构建作为回归门槛。
 
 ## 目录结构
 
@@ -76,7 +96,7 @@ apps/
   analytics/        活动与全站看板
 common/             统一响应、异常、分页、权限、请求 ID
 tests/              跨模块 API 与集成测试
-web/                Vue 3 前端
+web/                Vue 3 前端（api / stores / layouts / views/public / views/console / components）
 docs/               开发日志与项目文档
 ```
 

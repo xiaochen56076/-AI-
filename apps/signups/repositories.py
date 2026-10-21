@@ -12,6 +12,7 @@ def query_my_signups(user, params):
             "activity__category",
             "activity__club",
             "activity__organizer",
+            "checkin_record",
         )
         .prefetch_related("activity__tags")
     )
