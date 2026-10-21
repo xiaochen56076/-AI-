@@ -132,3 +132,55 @@ ruff: All checks passed
 ```
 
 覆盖点：动态码生成与成功签到、篡改码/过期码拦截、未报名用户拦截、重复签到拦截、签到时间窗外拦截、静态码签到、手动补签审计字段、补签权限/原因/学号校验、非主办方生成签到码拦截、活动详情不再泄露签到密钥。
+
+## 2026-10-21 · 站内通知、统计看板与定时任务
+
+### 做了什么
+
+- 新增站内通知模型，支持系统、报名成功、进入候补、候补转正、活动提醒、活动取消、审核结果、签到成功八类消息，并记录已读时间。
+- 报名成功、进入候补（含排位）、候补转正、活动取消、审核通过/驳回、签到成功均自动生成站内通知。
+- 提供通知列表（按未读/类型/关键词筛选、分页）、未读数量、单条已读、全部已读接口；单条操作校验通知归属。
+- 新增单场活动数据看板：报名/候补/取消/签到/爽约人数，名额填充率、签到率、候补转正率、浏览转化率，签到方式、学院与年级分布、近 7 天报名趋势。
+- 新增全站看板：用户/社团/分类/活动/报名总量，活动与报名状态分布，整体签到率，热门分类排行与近 8 周活动/报名趋势。
+- 新增管理端分类、标签字典接口，支持新增、编辑、停用与包含停用项的列表查询；公开分类/标签列表自动过滤停用项。
+- 新增 Celery 任务：每 5 分钟结束过期活动、将未签到成功报名标记爽约、取消剩余候补；向 2 小时内开始活动的成功报名用户发送开场提醒。
+- 开场提醒使用 `reminder:{activity}:{user}` 业务去重键，任务重复执行不会重复发送。
+- 提供 `python manage.py run_scheduled_tasks` 作为无 Celery 环境的本地调度入口，并配置 Celery Beat 周期计划。
+
+### 改动位置
+
+- 通知域：`apps/notifications/models.py`、`apps/notifications/services.py`、`apps/notifications/repositories.py`、`apps/notifications/serializers.py`、`apps/notifications/views.py`、`apps/notifications/urls.py`、`apps/notifications/tasks.py`
+- 统计域：`apps/analytics/services.py`、`apps/analytics/views.py`、`apps/analytics/urls.py`
+- 活动字典：`apps/activities/serializers.py`、`apps/activities/services.py`、`apps/activities/views.py`、`apps/activities/urls.py`
+- 生命周期任务：`apps/activities/tasks.py`
+- 本地调度命令：`apps/activities/management/commands/run_scheduled_tasks.py`
+- 通知接入点：`apps/signups/services.py`、`apps/activities/services.py`
+- 配置与路由：`config/settings/base.py`（Celery Beat）、`config/urls.py`
+- 迁移：`apps/notifications/migrations/0001_initial.py`
+- 测试：`tests/test_notifications.py`、`tests/test_analytics.py`、`tests/test_dictionaries.py`
+
+### 新增接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/notifications` | 我的通知列表 |
+| GET | `/api/v1/notifications/unread-count` | 未读数量 |
+| POST | `/api/v1/notifications/{id}/read` | 标记单条已读 |
+| POST | `/api/v1/notifications/read-all` | 全部已读 |
+| GET | `/api/v1/activities/{id}/statistics` | 单场活动数据看板 |
+| GET | `/api/v1/admin/dashboard` | 全站数据看板 |
+| GET/POST | `/api/v1/admin/categories` | 分类管理列表/新增 |
+| PATCH | `/api/v1/admin/categories/{id}` | 编辑/停用分类 |
+| GET/POST | `/api/v1/admin/tags` | 标签管理列表/新增 |
+| PATCH | `/api/v1/admin/tags/{id}` | 编辑/停用标签 |
+
+### 验证
+
+```text
+Django system check: 0 issues
+pytest: 61 passed
+ruff: All checks passed
+python manage.py run_scheduled_tasks: 正常执行
+```
+
+覆盖点：报名/候补/转正通知、活动取消通知、审核通过/驳回通知、通知筛选与已读、越权读取拦截、开场提醒幂等与已签到跳过、过期活动自动结束与爽约/候补处理、无需签到活动不误标爽约、活动统计计数与比率、人群分布、看板权限、全站趋势与热门分类、分类标签新增/停用与重复校验。

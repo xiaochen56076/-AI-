@@ -6,6 +6,12 @@ from rest_framework import status
 from apps.accounts.models import User
 from apps.activities.models import Activity
 from apps.activities.services import can_admin_manage, can_manage_activity
+from apps.notifications.services import (
+    notify_activity_cancelled,
+    notify_checkin_success,
+    notify_signup_result,
+    notify_waitlist_promoted,
+)
 from common.exceptions import BusinessError
 
 from .models import Signup
@@ -31,6 +37,17 @@ def _signup_error(message: str, code: int, http_status: int, signup: Signup | No
 def _next_queue_no(activity: Activity) -> int:
     current = Signup.objects.filter(activity=activity).aggregate(value=Max("queue_no"))["value"]
     return (current or 0) + 1
+
+
+def _waitlist_position(signup: Signup) -> int:
+    return (
+        Signup.objects.filter(
+            activity_id=signup.activity_id,
+            status=Signup.Status.WAITLIST,
+            queue_no__lt=signup.queue_no or 0,
+        ).count()
+        + 1
+    )
 
 
 def _apply_existing_signup(signup: Signup, **values):
@@ -90,6 +107,7 @@ def signup_for_activity(activity_id: int, user: User, remark: str = "") -> tuple
                     status=Signup.Status.SUCCESS,
                     remark=remark[:255],
                 )
+            notify_signup_result(signup)
             return signup, True
 
     waitlist_available = activity.waitlist_enabled and (
@@ -120,6 +138,7 @@ def signup_for_activity(activity_id: int, user: User, remark: str = "") -> tuple
                     queue_no=queue_no,
                     remark=remark[:255],
                 )
+            notify_signup_result(signup, position=_waitlist_position(signup))
             return signup, True
 
     _signup_error("名额已满，候补队列也已满", 40001, status.HTTP_409_CONFLICT)
@@ -160,6 +179,7 @@ def cancel_signup(activity_id: int, user: User) -> tuple[Signup, Signup | None]:
                 waitlist_count=F("waitlist_count") - 1,
                 signup_count=F("signup_count") + 1,
             )
+            notify_waitlist_promoted(promoted)
     else:
         signup.status = Signup.Status.CANCELLED
         signup.cancel_at = now
@@ -177,6 +197,7 @@ def cancel_signups_for_activity(activity: Activity, reason: str = ""):
         activity=activity,
         status__in=[Signup.Status.WAITLIST, Signup.Status.SUCCESS],
     )
+    user_ids = list(active.values_list("user_id", flat=True))
     active.filter(status=Signup.Status.WAITLIST).update(
         status=Signup.Status.CANCELLED,
         cancel_at=now,
@@ -190,6 +211,8 @@ def cancel_signups_for_activity(activity: Activity, reason: str = ""):
         updated_at=now,
     )
     Activity.objects.filter(pk=activity.pk).update(signup_count=0, waitlist_count=0)
+    if user_ids:
+        notify_activity_cancelled(activity, reason, user_ids)
 
 
 def ensure_can_manage_roster(user, activity: Activity):
@@ -274,6 +297,7 @@ def checkin_with_code(
     signup.status = Signup.Status.CHECKED_IN
     signup.save(update_fields=["status", "updated_at"])
     count = CheckinRecord.objects.filter(activity=activity).count()
+    notify_checkin_success(record)
     return record, count
 
 
@@ -328,6 +352,7 @@ def manual_checkin(activity_id: int, operator: User, student_no: str, reason: st
     signup.status = Signup.Status.CHECKED_IN
     signup.save(update_fields=["status", "updated_at"])
     count = CheckinRecord.objects.filter(activity=activity).count()
+    notify_checkin_success(record)
     return record, count
 
 

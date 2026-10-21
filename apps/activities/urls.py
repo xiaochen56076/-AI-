@@ -8,6 +8,10 @@ from .views import (
     ActivitySubmitView,
     AdminAuditActionView,
     AdminAuditListView,
+    AdminCategoryDetailView,
+    AdminCategoryListCreateView,
+    AdminTagDetailView,
+    AdminTagListCreateView,
     CategoryListView,
     MyActivitiesView,
     MyFavoritesView,
@@ -26,4 +30,16 @@ urlpatterns = [
     path("my/favorites", MyFavoritesView.as_view(), name="my-favorites"),
     path("admin/audits", AdminAuditListView.as_view(), name="admin-audits"),
     path("admin/audits/<int:pk>", AdminAuditActionView.as_view(), name="admin-audit-action"),
+    path(
+        "admin/categories",
+        AdminCategoryListCreateView.as_view(),
+        name="admin-categories",
+    ),
+    path(
+        "admin/categories/<int:pk>",
+        AdminCategoryDetailView.as_view(),
+        name="admin-category-detail",
+    ),
+    path("admin/tags", AdminTagListCreateView.as_view(), name="admin-tags"),
+    path("admin/tags/<int:pk>", AdminTagDetailView.as_view(), name="admin-tag-detail"),
 ]

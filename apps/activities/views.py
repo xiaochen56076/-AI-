@@ -22,6 +22,8 @@ from .serializers import (
     ActivityBriefSerializer,
     ActivityDetailSerializer,
     ActivityWriteSerializer,
+    AdminCategorySerializer,
+    AdminTagSerializer,
     AuditActionSerializer,
     CancelActivitySerializer,
     CategorySerializer,
@@ -33,6 +35,8 @@ from .services import (
     create_activity,
     remove_favorite,
     review_activity,
+    save_category,
+    save_tag,
     submit_activity,
     update_activity,
     user_can_view_activity,
@@ -240,3 +244,63 @@ class AdminAuditActionView(APIView):
             message,
             request,
         )
+
+
+class AdminCategoryListCreateView(APIView):
+    permission_classes = [require_permission("dict:manage")]
+
+    @extend_schema(summary="管理端分类列表（含停用）")
+    def get(self, request):
+        categories = ActivityCategory.objects.filter(is_deleted=False)
+        return success(AdminCategorySerializer(categories, many=True).data, request=request)
+
+    @extend_schema(summary="新增活动分类")
+    def post(self, request):
+        serializer = AdminCategorySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        category = save_category(None, serializer.validated_data)
+        return created(AdminCategorySerializer(category).data, "分类已创建", request)
+
+
+class AdminCategoryDetailView(APIView):
+    permission_classes = [require_permission("dict:manage")]
+
+    @extend_schema(summary="编辑或停用活动分类")
+    def patch(self, request, pk):
+        category = ActivityCategory.objects.filter(pk=pk, is_deleted=False).first()
+        if not category:
+            raise BusinessError("分类不存在", 30004, status.HTTP_404_NOT_FOUND)
+        serializer = AdminCategorySerializer(category, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        category = save_category(pk, serializer.validated_data)
+        return success(AdminCategorySerializer(category).data, "分类已更新", request)
+
+
+class AdminTagListCreateView(APIView):
+    permission_classes = [require_permission("dict:manage")]
+
+    @extend_schema(summary="管理端标签列表（含停用）")
+    def get(self, request):
+        tags = ActivityTag.objects.filter(is_deleted=False)
+        return success(AdminTagSerializer(tags, many=True).data, request=request)
+
+    @extend_schema(summary="新增活动标签")
+    def post(self, request):
+        serializer = AdminTagSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tag = save_tag(None, serializer.validated_data)
+        return created(AdminTagSerializer(tag).data, "标签已创建", request)
+
+
+class AdminTagDetailView(APIView):
+    permission_classes = [require_permission("dict:manage")]
+
+    @extend_schema(summary="编辑或停用活动标签")
+    def patch(self, request, pk):
+        tag = ActivityTag.objects.filter(pk=pk, is_deleted=False).first()
+        if not tag:
+            raise BusinessError("标签不存在", 30004, status.HTTP_404_NOT_FOUND)
+        serializer = AdminTagSerializer(tag, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        tag = save_tag(pk, serializer.validated_data)
+        return success(AdminTagSerializer(tag).data, "标签已更新", request)

@@ -1,9 +1,10 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status
 
 from apps.accounts.models import User
 from apps.clubs.models import Club
+from apps.notifications.services import notify_audit_result
 from common.exceptions import BusinessError
 from common.permissions import user_has_permission
 
@@ -153,6 +154,9 @@ def review_activity(activity_id: int, auditor, action: int, comment: str) -> Act
         action=action,
         comment=comment.strip(),
     )
+    notify_audit_result(
+        activity, approved=action == AuditRecord.Action.APPROVE, comment=comment
+    )
     return activity
 
 
@@ -210,3 +214,45 @@ def user_can_view_activity(user, activity: Activity) -> bool:
         or can_admin_manage(user)
         or user_has_permission(user, "activity:audit")
     )
+
+
+@transaction.atomic
+def save_category(category_id: int | None, validated_data: dict):
+    from .models import ActivityCategory
+
+    try:
+        if category_id:
+            category = ActivityCategory.objects.filter(
+                pk=category_id, is_deleted=False
+            ).first()
+            if not category:
+                raise BusinessError("分类不存在", 30004, status.HTTP_404_NOT_FOUND)
+            for field, value in validated_data.items():
+                setattr(category, field, value)
+            category.save()
+            return category
+        return ActivityCategory.objects.create(**validated_data)
+    except IntegrityError:
+        raise BusinessError(
+            "分类标识 slug 已存在", 30009, status.HTTP_409_CONFLICT
+        ) from None
+
+
+@transaction.atomic
+def save_tag(tag_id: int | None, validated_data: dict):
+    from .models import ActivityTag
+
+    try:
+        if tag_id:
+            tag = ActivityTag.objects.filter(pk=tag_id, is_deleted=False).first()
+            if not tag:
+                raise BusinessError("标签不存在", 30004, status.HTTP_404_NOT_FOUND)
+            for field, value in validated_data.items():
+                setattr(tag, field, value)
+            tag.save()
+            return tag
+        return ActivityTag.objects.create(**validated_data)
+    except IntegrityError:
+        raise BusinessError(
+            "标签名称已存在", 30009, status.HTTP_409_CONFLICT
+        ) from None

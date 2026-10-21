@@ -253,6 +253,30 @@ class ActivityWriteSerializer(serializers.Serializer):
         return attrs
 
 
+class AdminCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ActivityCategory
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "icon",
+            "color",
+            "sort_order",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+
+
+class AdminTagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ActivityTag
+        fields = ["id", "name", "color", "is_active", "created_at"]
+        read_only_fields = ["created_at"]
+
+
 class CancelActivitySerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
 

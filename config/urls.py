@@ -18,6 +18,8 @@ urlpatterns = [
     path("api/v1/", include("apps.accounts.urls")),
     path("api/v1/", include("apps.activities.urls")),
     path("api/v1/", include("apps.signups.urls")),
+    path("api/v1/", include("apps.notifications.urls")),
+    path("api/v1/", include("apps.analytics.urls")),
 ]
 
 handler404 = "common.exceptions.api_not_found_view"

@@ -192,6 +192,16 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL or "memory://")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "cache+memory://")
 CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", True)
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    "close-expired-activities": {
+        "task": "apps.activities.tasks.close_expired_activities_task",
+        "schedule": timedelta(minutes=5),
+    },
+    "send-activity-reminders": {
+        "task": "apps.notifications.tasks.send_activity_reminders_task",
+        "schedule": timedelta(minutes=5),
+    },
+}
 
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "CampusHub <noreply@campushub.local>")
