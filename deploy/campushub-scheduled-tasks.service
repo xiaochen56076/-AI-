@@ -1,0 +1,10 @@
+[Unit]
+Description=CampusHub lifecycle tasks (activity closing, no-shows, reminders)
+
+[Service]
+Type=oneshot
+User=campushub
+Group=campushub
+WorkingDirectory=/srv/campushub
+EnvironmentFile=/etc/campushub/production.env
+ExecStart=/srv/campushub/.venv/bin/python manage.py run_scheduled_tasks

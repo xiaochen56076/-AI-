@@ -1,0 +1,24 @@
+[Unit]
+Description=CampusHub Gunicorn (WSGI)
+After=network.target mysql.service redis.service
+
+[Service]
+Type=notify
+User=campushub
+Group=campushub
+RuntimeDirectory=campushub
+WorkingDirectory=/srv/campushub
+EnvironmentFile=/etc/campushub/production.env
+ExecStart=/srv/campushub/.venv/bin/gunicorn config.wsgi:application \
+    --bind unix:/run/campushub/gunicorn.sock \
+    --workers 4 \
+    --timeout 60 \
+    --access-logfile - \
+    --error-logfile -
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

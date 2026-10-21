@@ -221,3 +221,32 @@ npm run build: 成功，产物 web/dist
 浏览器实测：12 个学生端/工作台页面在真实种子数据下渲染正常，登录→报名（3/16 → 4/16）→候补（第 4 位）→取消（候补 4 → 3）、消息全部已读、名单导出 CSV（表头 + 12 行，含 BOM）、审核通过/驳回、字典启停均已验证
 动态码签到实测：主办方取码 → 学生 `/checkin` 手动输入 8 位码 → 返回「签到成功」卡片（姓名/学号/签到时间/签到方式/当前已签到 1 人）
 ```
+
+## 2026-10-21 · 端到端验收与部署交付
+
+### 做了什么
+
+- 补齐生产部署件：Nginx 站点配置（HTTPS 跳转、SPA history 回退、`/api` 反代 unix socket、静态与媒体缓存、安全响应头）、Gunicorn / Celery worker / Celery beat 三个 systemd 单元，以及无 Celery 场景下每 5 分钟执行 `run_scheduled_tasks` 的 service + timer。
+- 新增 `requirements-prod.txt`（在基础依赖之上加 gunicorn），本地 Windows 开发无需安装。
+- 新增 `docs/DEPLOYMENT.md`：架构图、目录与服务账号、生产环境变量、后端/前端发布步骤、备份与回滚、健康检查表、按角色的端到端验收清单、常见故障对照。
+- 校正文档与实现不一致之处：前端 `baseURL` 固定为 `/api/v1`，不存在构建期环境变量，故移除 `.env.example` 里失效的 `VITE_API_BASE_URL`；MySQL 与 SQLite 的连接选项分别说明；`check --deploy` 的实际结论写为「无 security 告警，剩余为 drf_spectacular W002 序列化器推断提示」。
+- 验收补测：管理员走查全站看板/用户管理/字典管理，审核员越权访问 `/console/users` 被路由守卫重定向到 `/forbidden`，审核员工作台导航仅保留「审核工作台」；主办方端确认已发布活动编辑页 18 个字段锁定、仅标签/简介/封面/详情可改；取消活动弹窗校验「至少 2 个字」并在提交后活动转「已取消」、主办方可见取消原因而其他用户返回 404；名单导出 CSV 为「表头 + 12 行」且带 BOM；动态码链路实测主办方取码 → 学生输入 8 位码 → 「签到成功」卡片（含姓名/学号/签到时间/签到方式/已签到人数）。
+- 清理验收过程中产生的一次性数据：删除临时活动 59/60 及其报名、签到、收藏、审核记录，删除测试账号 `20249999` 与其通知、报名、收藏。
+
+### 改动位置
+
+- Nginx：`nginx/campushub.conf`
+- systemd：`deploy/campushub-gunicorn.service`、`deploy/campushub-celery-worker.service`、`deploy/campushub-celery-beat.service`、`deploy/campushub-scheduled-tasks.service`、`deploy/campushub-scheduled-tasks.timer`
+- 依赖：`requirements-prod.txt`
+- 配置清理：`.env.example`
+- 文档：`docs/DEPLOYMENT.md`、`README.md`（部署章节与文档索引）、`docs/DEVELOPMENT_LOG.md`
+
+### 验证
+
+```text
+python -m pytest: 61 passed
+python -m ruff check .: All checks passed
+npm run typecheck (vue-tsc -b): 无错误
+npm run build: 成功
+python manage.py check --deploy（prod）: 0 个 security 告警，71 个 drf_spectacular.W002 提示
+```

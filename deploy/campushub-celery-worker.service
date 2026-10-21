@@ -1,0 +1,16 @@
+[Unit]
+Description=CampusHub Celery worker
+After=network.target redis.service
+
+[Service]
+Type=exec
+User=campushub
+Group=campushub
+WorkingDirectory=/srv/campushub
+EnvironmentFile=/etc/campushub/production.env
+ExecStart=/srv/campushub/.venv/bin/celery -A config worker --loglevel=INFO --concurrency=4
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

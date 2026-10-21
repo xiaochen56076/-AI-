@@ -1,0 +1,4 @@
+# Gunicorn 是 WSGI HTTP 服务器，仅在 Linux/macOS 部署环境使用。
+# 本地 Windows 开发无需安装，运行 `pip install -r requirements-prod.txt` 即可。
+-r requirements.txt
+gunicorn==23.0.0

@@ -15,8 +15,9 @@ CampusHub 将校园活动的「发布 — 审核 — 报名 — 签到 — 复�
 | 活动数据看板、全站看板、分类标签字典管理 | 已完成 |
 | 活动自动结束、爽约标记、开场提醒定时任务 | 已完成 |
 | Vue 3 学生端 / 主办方端 / 管理端 | 已完成 |
+| 部署脚本（Nginx / systemd / Gunicorn）与端到端验收清单 | 已完成 |
 
-详细变更与测试记录见 [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md)。
+详细变更与测试记录见 [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md)，生产部署与上线验收清单见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ## 技术栈
 
@@ -98,6 +99,19 @@ common/             统一响应、异常、分页、权限、请求 ID
 tests/              跨模块 API 与集成测试
 web/                Vue 3 前端（api / stores / layouts / views/public / views/console / components）
 docs/               开发日志与项目文档
+```
+
+## 部署
+
+生产部署采用 Nginx + Gunicorn（+ 可选 Celery/Redis），配置与脚本随仓库交付：
+
+```text
+nginx/campushub.conf                 站点配置（HTTPS、SPA history 回退、/api 反代、静态与媒体）
+deploy/campushub-gunicorn.service    Gunicorn systemd 单元（unix socket）
+deploy/campushub-celery-worker.service / -beat.service
+deploy/campushub-scheduled-tasks.{service,timer}   无 Celery 时每 5 分钟跑生命周期任务
+requirements-prod.txt                生产依赖（含 gunicorn）
+docs/DEPLOYMENT.md                   环境变量、发布步骤、健康检查与端到端验收清单
 ```
 
 ## 核心约定

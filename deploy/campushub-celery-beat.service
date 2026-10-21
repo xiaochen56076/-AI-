@@ -1,0 +1,16 @@
+[Unit]
+Description=CampusHub Celery beat (scheduler)
+After=network.target redis.service campushub-celery-worker.service
+
+[Service]
+Type=exec
+User=campushub
+Group=campushub
+WorkingDirectory=/srv/campushub
+EnvironmentFile=/etc/campushub/production.env
+ExecStart=/srv/campushub/.venv/bin/celery -A config beat --loglevel=INFO
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

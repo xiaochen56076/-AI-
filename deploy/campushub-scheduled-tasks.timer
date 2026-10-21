@@ -1,0 +1,10 @@
+[Unit]
+Description=Run CampusHub lifecycle tasks every 5 minutes (Celery-free deployments)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
