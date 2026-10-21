@@ -61,3 +61,34 @@ ruff: All checks passed
 ```
 
 覆盖点：主办方创建草稿与自动建社团、学生创建拦截、时间合法性、提交审核、审核列表、通过发布、驳回意见校验、驳回后重新提交、非本人编辑拦截、已发布字段限制、公开检索筛选排序、详情浏览量、收藏幂等/取消收藏、草稿对外隐藏、取消原因校验、分类标签公开读取。
+
+## 2026-10-21 · 报名、候补与并发防超卖
+
+### 做了什么
+
+- 新增报名实体，状态覆盖候补、报名成功、已取消、已签到、已爽约，保留候补序号与时间轨迹。
+- 实现报名主链路：活动状态/报名时间窗/账号有效性校验、满员自动进入候补、候补上限、重复报名幂等、已取消用户重新报名。
+- 并发控制采用「活动行锁 + 条件原子更新 `signup_count < capacity` + `(activity, user)` 唯一索引 + 报名接口限流」四层防护。
+- 取消报名：成功名额释放后在同一事务内按 `queue_no` 递补候补首位；候补取消同步修正计数；截止后禁止取消。
+- 活动取消时自动取消全部有效报名并归零计数。
+- 实现我的报名分组查询、主办方实时名单筛选、CSV 导出（含 UTF-8 BOM 与表格公式注入防护）。
+- 增加 100 并发抢 10 个名额的真实线程测试，验证无超卖、无重复用户。
+
+### 改动位置
+
+- 模型：`apps/signups/models.py`
+- 业务与查询：`apps/signups/services.py`、`apps/signups/repositories.py`
+- 接口：`apps/signups/views.py`、`apps/signups/urls.py`、`apps/signups/serializers.py`
+- 限流：`apps/signups/throttles.py`、`config/settings/base.py`
+- 活动联动：`apps/activities/services.py`
+- 迁移：`apps/signups/migrations/0001_initial.py`
+- 测试：`tests/test_signups.py`、`tests/conftest.py`、`config/settings/test.py`
+
+### 验证
+
+```text
+pytest: 40 passed（包含 100 并发报名测试）
+ruff: All checks passed
+```
+
+并发测试结果：100 名用户同时抢容量为 10 的活动，恰好 10 人成功，`signup_count = 10`，无超卖、无重复记录。

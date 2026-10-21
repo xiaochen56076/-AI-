@@ -39,3 +39,6 @@ Thumbs.db
 # Test artifacts
 test-results/
 playwright-report/
+
+test_db.sqlite3
+test_db.sqlite3-journal

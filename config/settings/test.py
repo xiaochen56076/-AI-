@@ -4,8 +4,9 @@ DEBUG = False
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
-        "OPTIONS": {"timeout": 30, "transaction_mode": "IMMEDIATE"},
+        "NAME": BASE_DIR / "test_db.sqlite3",  # noqa: F405
+        "OPTIONS": {"timeout": 60, "transaction_mode": "IMMEDIATE"},
+        "TEST": {"NAME": BASE_DIR / "test_db.sqlite3"},  # noqa: F405
     }
 }
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
@@ -19,3 +20,10 @@ CACHES = {
     }
 }
 LOGGING = {"version": 1, "disable_existing_loggers": True}
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405
+    "DEFAULT_THROTTLE_RATES": {
+        **REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"],  # noqa: F405
+        "signup": None,
+    },
+}

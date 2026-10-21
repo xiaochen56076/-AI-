@@ -181,6 +181,9 @@ def cancel_activity(activity_id: int, user, reason: str = "") -> Activity:
     activity.status = Activity.Status.CANCELLED
     activity.cancel_reason = reason.strip()
     activity.save(update_fields=["status", "cancel_reason", "updated_at"])
+    from apps.signups.services import cancel_signups_for_activity
+
+    cancel_signups_for_activity(activity, reason)
     return activity
 
 
