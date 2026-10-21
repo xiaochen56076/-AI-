@@ -11,7 +11,8 @@ from apps.accounts.models import Role, User
 from apps.accounts.services import issue_tokens
 from apps.activities.models import Activity, ActivityCategory
 from apps.clubs.models import Club
-from apps.signups.models import Signup
+from apps.signups.checkin import code_for_bucket, current_bucket
+from apps.signups.models import CheckinRecord, Signup
 from apps.signups.services import signup_for_activity
 from common.exceptions import BusinessError
 
@@ -320,3 +321,226 @@ def test_concurrent_signup_never_oversells(organizer_user):
     assert activity.signup_count == 10
     assert Signup.objects.filter(activity=activity).count() == 10
     assert all(item == "success" or item == "error:40001" for item in results)
+
+
+def make_checkin_activity(organizer, **overrides):
+    now = timezone.now()
+    values = {
+        "club": Club.objects.create(name="签到测试社团", owner=organizer),
+        "organizer": organizer,
+        "category": ActivityCategory.objects.get(slug="lecture"),
+        "title": "人工智能前沿讲座",
+        "summary": "签到功能测试",
+        "location": "图书馆报告厅",
+        "start_time": now + timedelta(minutes=10),
+        "end_time": now + timedelta(hours=3),
+        "signup_start": now - timedelta(hours=1),
+        "signup_end": now + timedelta(minutes=5),
+        "capacity": 20,
+        "waitlist_enabled": True,
+        "checkin_mode": Activity.CheckinMode.DYNAMIC,
+        "status": Activity.Status.PUBLISHED,
+    }
+    values.update(overrides)
+    return Activity.objects.create(**values)
+
+
+def sign_up(client, activity):
+    response = client.post(
+        f"/api/v1/activities/{activity.pk}/signup", {}, format="json"
+    )
+    assert response.status_code == 200, response.content
+    return response.json()["data"]
+
+
+def fetch_checkin_code(organizer_client, activity):
+    response = organizer_client.post(f"/api/v1/activities/{activity.pk}/checkin-code")
+    assert response.status_code == 200, response.content
+    return response.json()["data"]
+
+
+def scan(client, activity, code):
+    return client.post(
+        "/api/v1/checkin",
+        {"activity_id": activity.pk, "code": code},
+        format="json",
+    )
+
+
+def test_dynamic_code_and_scan_checkin_success(
+    organizer_user, organizer_client, auth_client
+):
+    activity = make_checkin_activity(organizer_user)
+    sign_up(auth_client, activity)
+
+    code_data = fetch_checkin_code(organizer_client, activity)
+    assert len(code_data["code"]) == 8
+    assert code_data["expires_at"]
+    assert code_data["qr_content"].startswith("campushub://checkin?")
+    assert code_data["checked_in_count"] == 0
+
+    response = scan(auth_client, activity, code_data["code"])
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["checkin_method"] == CheckinRecord.Method.SCAN
+    assert data["checked_in_count"] == 1
+    assert data["student_no"] == "20260001"
+
+    signup = Signup.objects.get(activity=activity, user__student_no="20260001")
+    assert signup.status == Signup.Status.CHECKED_IN
+    record = CheckinRecord.objects.get(signup=signup)
+    assert record.activity_id == activity.pk
+    assert record.method == CheckinRecord.Method.SCAN
+
+    roster = organizer_client.get(f"/api/v1/activities/{activity.pk}/signups").json()["data"]
+    assert roster["results"][0]["checked_in_at"]
+    assert roster["results"][0]["checkin_method_text"] == "扫码签到"
+
+    detail = auth_client.get(f"/api/v1/activities/{activity.pk}").json()["data"]
+    assert detail["checked_in_count"] == 1
+    assert detail["my_signup"]["checked_in"] is True
+
+
+def test_checkin_rejects_tampered_and_expired_codes(
+    organizer_user, organizer_client, auth_client
+):
+    activity = make_checkin_activity(organizer_user)
+    sign_up(auth_client, activity)
+    code = fetch_checkin_code(organizer_client, activity)["code"]
+
+    tampered = code[:-1] + ("0" if code[-1] != "0" else "1")
+    response = scan(auth_client, activity, tampered)
+    assert response.status_code == 409
+    assert response.json()["code"] == 40011
+
+    expired = code_for_bucket(activity, current_bucket() - 20)
+    response = scan(auth_client, activity, expired)
+    assert response.status_code == 409
+    assert response.json()["code"] == 40011
+    assert not CheckinRecord.objects.filter(activity=activity).exists()
+
+
+def test_checkin_requires_successful_signup(auth_client, organizer_user, organizer_client):
+    activity = make_checkin_activity(organizer_user)
+    code = fetch_checkin_code(organizer_client, activity)["code"]
+
+    response = scan(auth_client, activity, code)
+    assert response.status_code == 409
+    assert response.json()["code"] == 40012
+
+
+def test_duplicate_checkin_is_rejected(organizer_user, organizer_client, auth_client):
+    activity = make_checkin_activity(organizer_user)
+    sign_up(auth_client, activity)
+    code = fetch_checkin_code(organizer_client, activity)["code"]
+
+    assert scan(auth_client, activity, code).status_code == 200
+    duplicate = scan(auth_client, activity, code)
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == 40003
+    assert CheckinRecord.objects.filter(activity=activity).count() == 1
+
+
+def test_checkin_is_rejected_outside_time_window(
+    published_activity, organizer_client, auth_client
+):
+    sign_up(auth_client, published_activity)
+    code = fetch_checkin_code(organizer_client, published_activity)["code"]
+
+    response = scan(auth_client, published_activity, code)
+    assert response.status_code == 409
+    assert response.json()["code"] == 40010
+
+
+def test_static_checkin_mode_has_no_expiry(organizer_user, organizer_client, auth_client):
+    activity = make_checkin_activity(
+        organizer_user, checkin_mode=Activity.CheckinMode.STATIC
+    )
+    sign_up(auth_client, activity)
+    code_data = fetch_checkin_code(organizer_client, activity)
+    assert code_data["expires_at"] is None
+    assert scan(auth_client, activity, code_data["code"]).status_code == 200
+
+
+def test_organizer_manual_checkin_records_audit_fields(
+    organizer_user, organizer_client, auth_client
+):
+    activity = make_checkin_activity(organizer_user)
+    sign_up(auth_client, activity)
+
+    response = organizer_client.post(
+        f"/api/v1/activities/{activity.pk}/checkin-manual",
+        {"student_no": "20260001", "reason": "学生手机没电，现场核验学生证"},
+        format="json",
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["checkin_method"] == CheckinRecord.Method.MANUAL
+    assert data["real_name"] == "林晓"
+
+    record = CheckinRecord.objects.get(activity=activity)
+    assert record.method == CheckinRecord.Method.MANUAL
+    assert record.operator_id == organizer_user.pk
+    assert "学生证" in record.reason
+    assert Signup.objects.get(activity=activity).status == Signup.Status.CHECKED_IN
+
+    duplicate = organizer_client.post(
+        f"/api/v1/activities/{activity.pk}/checkin-manual",
+        {"student_no": "20260001", "reason": "重复补签测试"},
+        format="json",
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == 40003
+
+
+def test_manual_checkin_validates_permission_reason_and_student(
+    organizer_user, organizer_client, another_organizer_client, auth_client
+):
+    activity = make_checkin_activity(organizer_user)
+    sign_up(auth_client, activity)
+
+    forbidden = another_organizer_client.post(
+        f"/api/v1/activities/{activity.pk}/checkin-manual",
+        {"student_no": "20260001", "reason": "越权补签"},
+        format="json",
+    )
+    assert forbidden.status_code == 403
+
+    student_denied = auth_client.post(
+        f"/api/v1/activities/{activity.pk}/checkin-manual",
+        {"student_no": "20260001", "reason": "学生不能补签"},
+        format="json",
+    )
+    assert student_denied.status_code == 403
+
+    short_reason = organizer_client.post(
+        f"/api/v1/activities/{activity.pk}/checkin-manual",
+        {"student_no": "20260001", "reason": "x"},
+        format="json",
+    )
+    assert short_reason.status_code == 400
+
+    missing_student = organizer_client.post(
+        f"/api/v1/activities/{activity.pk}/checkin-manual",
+        {"student_no": "20990000", "reason": "现场核验"},
+        format="json",
+    )
+    assert missing_student.status_code == 404
+    assert missing_student.json()["code"] == 40015
+
+
+def test_only_owner_can_generate_checkin_code(
+    organizer_user, another_organizer_client, auth_client
+):
+    activity = make_checkin_activity(organizer_user)
+
+    assert (
+        auth_client.post(f"/api/v1/activities/{activity.pk}/checkin-code").status_code
+        == 403
+    )
+    assert (
+        another_organizer_client.post(
+            f"/api/v1/activities/{activity.pk}/checkin-code"
+        ).status_code
+        == 403
+    )

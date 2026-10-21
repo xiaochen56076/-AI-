@@ -21,6 +21,9 @@ class SignupSerializer(serializers.ModelSerializer):
     user = SignupStudentSerializer(read_only=True)
     status_text = serializers.CharField(source="get_status_display", read_only=True)
     queue_position = serializers.SerializerMethodField()
+    checked_in_at = serializers.SerializerMethodField()
+    checkin_method = serializers.SerializerMethodField()
+    checkin_method_text = serializers.SerializerMethodField()
 
     class Meta:
         model = Signup
@@ -33,6 +36,9 @@ class SignupSerializer(serializers.ModelSerializer):
             "remark",
             "signup_at",
             "cancel_at",
+            "checked_in_at",
+            "checkin_method",
+            "checkin_method_text",
             "user",
         ]
 
@@ -48,11 +54,30 @@ class SignupSerializer(serializers.ModelSerializer):
             + 1
         )
 
+    def _record(self, obj):
+        try:
+            return obj.checkin_record
+        except Exception:
+            return None
+
+    def get_checked_in_at(self, obj):
+        record = self._record(obj)
+        return record.checkin_at.isoformat() if record else None
+
+    def get_checkin_method(self, obj):
+        record = self._record(obj)
+        return record.method if record else None
+
+    def get_checkin_method_text(self, obj):
+        record = self._record(obj)
+        return record.get_method_display() if record else None
+
 
 class MySignupSerializer(serializers.ModelSerializer):
     activity = ActivityBriefSerializer(read_only=True)
     status_text = serializers.CharField(source="get_status_display", read_only=True)
     queue_position = serializers.SerializerMethodField()
+    checked_in_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Signup
@@ -64,6 +89,7 @@ class MySignupSerializer(serializers.ModelSerializer):
             "queue_position",
             "signup_at",
             "cancel_at",
+            "checked_in_at",
             "activity",
         ]
 
@@ -78,6 +104,27 @@ class MySignupSerializer(serializers.ModelSerializer):
             ).count()
             + 1
         )
+
+    def get_checked_in_at(self, obj):
+        record = getattr(obj, "checkin_record", None)
+        return record.checkin_at.isoformat() if record else None
+
+
+class CheckinRequestSerializer(serializers.Serializer):
+    activity_id = serializers.IntegerField(min_value=1)
+    code = serializers.CharField(max_length=16)
+    latitude = serializers.DecimalField(
+        max_digits=9, decimal_places=6, required=False, allow_null=True
+    )
+    longitude = serializers.DecimalField(
+        max_digits=9, decimal_places=6, required=False, allow_null=True
+    )
+    device_info = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+
+
+class ManualCheckinSerializer(serializers.Serializer):
+    student_no = serializers.CharField(max_length=20)
+    reason = serializers.CharField(max_length=255, min_length=2)
 
 
 def serialize_signup_result(signup: Signup, request=None):

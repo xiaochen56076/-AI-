@@ -29,7 +29,7 @@ def query_my_signups(user, params):
 
 
 def query_activity_signups(activity, params):
-    queryset = Signup.objects.filter(activity=activity).select_related("user")
+    queryset = Signup.objects.filter(activity=activity).select_related("user", "checkin_record")
     status_value = params.get("status", "").strip()
     if status_value.isdigit():
         queryset = queryset.filter(status=int(status_value))

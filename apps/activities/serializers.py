@@ -94,18 +94,27 @@ class ActivityDetailSerializer(ActivityBriefSerializer):
     can_submit = serializers.SerializerMethodField()
     can_audit = serializers.SerializerMethodField()
     audit_records = serializers.SerializerMethodField()
+    checkin_open = serializers.SerializerMethodField()
+    checkin_window_start = serializers.SerializerMethodField()
+    checkin_window_end = serializers.SerializerMethodField()
+    checked_in_count = serializers.SerializerMethodField()
+    my_signup = serializers.SerializerMethodField()
 
     class Meta(ActivityBriefSerializer.Meta):
         fields = [
             *ActivityBriefSerializer.Meta.fields,
             "description",
-            "checkin_secret",
             "cancel_reason",
             "updated_at",
             "can_manage",
             "can_submit",
             "can_audit",
             "audit_records",
+            "checkin_open",
+            "checkin_window_start",
+            "checkin_window_end",
+            "checked_in_count",
+            "my_signup",
         ]
 
     def _user(self):
@@ -139,10 +148,40 @@ class ActivityDetailSerializer(ActivityBriefSerializer):
         records = obj.audit_records.select_related("auditor").all()[:20]
         return AuditRecordSerializer(records, many=True).data
 
-    def get_checkin_secret(self, obj):
-        if not self.get_can_manage(obj):
+    def get_checkin_open(self, obj):
+        from apps.signups.checkin import is_checkin_open
+
+        return is_checkin_open(obj)
+
+    def get_checkin_window_start(self, obj):
+        from apps.signups.checkin import checkin_window
+
+        return checkin_window(obj)[0].isoformat()
+
+    def get_checkin_window_end(self, obj):
+        from apps.signups.checkin import checkin_window
+
+        return checkin_window(obj)[1].isoformat()
+
+    def get_checked_in_count(self, obj):
+        return obj.checkin_records.count()
+
+    def get_my_signup(self, obj):
+        user = self._user()
+        if not user or not user.is_authenticated:
             return None
-        return obj.checkin_secret
+        from apps.signups.models import Signup
+
+        signup = Signup.objects.filter(activity=obj, user=user).first()
+        if not signup:
+            return None
+        return {
+            "id": signup.pk,
+            "status": signup.status,
+            "status_text": signup.status_text,
+            "queue_no": signup.queue_no,
+            "checked_in": signup.status == Signup.Status.CHECKED_IN,
+        }
 
 
 class ActivityWriteSerializer(serializers.Serializer):

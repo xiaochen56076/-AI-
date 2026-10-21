@@ -41,7 +41,9 @@ def test_organizer_creates_draft_with_default_club(organizer_client):
     data = response.json()["data"]
     assert data["status"] == Activity.Status.DRAFT
     assert data["club"]["name"] == "陈老师的活动社"
-    assert data["checkin_secret"]
+    assert "checkin_secret" not in data
+    assert data["checkin_open"] is False
+    assert data["my_signup"] is None
     assert data["can_manage"] is True
 
 

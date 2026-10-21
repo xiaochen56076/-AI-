@@ -92,3 +92,43 @@ ruff: All checks passed
 ```
 
 并发测试结果：100 名用户同时抢容量为 10 的活动，恰好 10 人成功，`signup_count = 10`，无超卖、无重复记录。
+
+## 2026-10-21 · 动态二维码签到与手动补签
+
+### 做了什么
+
+- 新增签到记录模型，一条报名仅对应一条签到记录；记录签到方式（扫码/手动补签）、经纬度、设备信息、补签操作人与原因、签到时间。
+- 实现 HMAC-SHA256 动态签到码：以「活动 ID + 30 秒时间桶 + 活动密钥」计算 8 位签到码，校验时容忍前后各一个时间桶，兼容时钟偏差与网络延迟。
+- 支持静态码与动态码两种模式；二维码内容采用 `campushub://checkin?activity_id=...&code=...` 自定义协议，便于前端生成与扫码解析。
+- 扫码签到校验活动状态、签到时间窗（开始前 30 分钟至结束）、报名状态、重复签到与签到码有效性；签到成功同步报名状态为「已签到」。
+- 主办方签到台接口返回当前签到码、过期时间、服务器时间、签到窗口与已签到人数；活动详情新增签到开关、签到窗口、已签到人数与当前用户报名状态。
+- 手动补签强制填写原因并记录操作人，仅活动主办方或管理员可操作；补签同样受签到时间窗与重复签到校验。
+- 修复签到密钥通过活动详情接口泄露的问题，API 不再返回 `checkin_secret`。
+- 签到记录写入使用嵌套事务与唯一约束兜底，并发重复签到返回业务错误而非 500。
+
+### 改动位置
+
+- 签到算法：`apps/signups/checkin.py`
+- 模型与后台：`apps/signups/models.py`、`apps/signups/admin.py`
+- 业务与接口：`apps/signups/services.py`、`apps/signups/serializers.py`、`apps/signups/views.py`、`apps/signups/urls.py`
+- 活动详情联动：`apps/activities/serializers.py`
+- 迁移：`apps/signups/migrations/0002_checkinrecord.py`
+- 测试：`tests/test_signups.py`、`tests/test_activities.py`
+
+### 新增接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/v1/activities/{id}/checkin-code` | 主办方生成签到码 |
+| POST | `/api/v1/checkin` | 学生扫码签到 |
+| POST | `/api/v1/activities/{id}/checkin-manual` | 主办方手动补签 |
+
+### 验证
+
+```text
+Django system check: 0 issues
+pytest: 49 passed
+ruff: All checks passed
+```
+
+覆盖点：动态码生成与成功签到、篡改码/过期码拦截、未报名用户拦截、重复签到拦截、签到时间窗外拦截、静态码签到、手动补签审计字段、补签权限/原因/学号校验、非主办方生成签到码拦截、活动详情不再泄露签到密钥。

@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Max
 from django.utils import timezone
 from rest_framework import status
@@ -194,7 +194,7 @@ def cancel_signups_for_activity(activity: Activity, reason: str = ""):
 
 def ensure_can_manage_roster(user, activity: Activity):
     if not (can_manage_activity(user, activity) or can_admin_manage(user)):
-        raise BusinessError("只能查看自己发布活动的报名名单", 30002, status.HTTP_403_FORBIDDEN)
+        raise BusinessError("只能管理自己发布的活动", 30002, status.HTTP_403_FORBIDDEN)
 
 
 def build_csv_rows(activity: Activity):
@@ -216,3 +216,141 @@ def build_csv_rows(activity: Activity):
             ]
         )
     return rows
+
+
+@transaction.atomic
+def checkin_with_code(
+    activity_id: int,
+    user: User,
+    code: str,
+    latitude=None,
+    longitude=None,
+    device_info: str = "",
+) -> tuple:
+    from .checkin import is_checkin_open, verify_code
+    from .models import CheckinRecord
+
+    activity = (
+        Activity.objects.select_for_update()
+        .filter(pk=activity_id, is_deleted=False)
+        .first()
+    )
+    if not activity:
+        raise BusinessError("活动不存在", 30004, status.HTTP_404_NOT_FOUND)
+    if activity.checkin_mode == Activity.CheckinMode.NONE:
+        raise BusinessError("该活动无需签到", 40013, status.HTTP_409_CONFLICT)
+    if not is_checkin_open(activity):
+        raise BusinessError("当前不在签到时间内", 40010, status.HTTP_409_CONFLICT)
+
+    signup = (
+        Signup.objects.select_for_update()
+        .filter(activity=activity, user=user)
+        .first()
+    )
+    if not signup or signup.status not in {Signup.Status.SUCCESS, Signup.Status.CHECKED_IN}:
+        raise BusinessError("你还没有成功报名该活动", 40012, status.HTTP_409_CONFLICT)
+    if signup.status == Signup.Status.CHECKED_IN or CheckinRecord.objects.filter(signup=signup).exists():
+        raise BusinessError("你已完成签到，请勿重复签到", 40003, status.HTTP_409_CONFLICT)
+    if not verify_code(activity, code):
+        raise BusinessError("签到码无效或已过期，请扫描最新二维码", 40011, status.HTTP_409_CONFLICT)
+
+    now = timezone.now()
+    try:
+        with transaction.atomic():
+            record = CheckinRecord.objects.create(
+                signup=signup,
+                activity=activity,
+                user=user,
+                method=CheckinRecord.Method.SCAN,
+                latitude=latitude,
+                longitude=longitude,
+                device_info=device_info[:255],
+                checkin_at=now,
+            )
+    except IntegrityError:
+        raise BusinessError(
+            "你已完成签到，请勿重复签到", 40003, status.HTTP_409_CONFLICT
+        ) from None
+    signup.status = Signup.Status.CHECKED_IN
+    signup.save(update_fields=["status", "updated_at"])
+    count = CheckinRecord.objects.filter(activity=activity).count()
+    return record, count
+
+
+@transaction.atomic
+def manual_checkin(activity_id: int, operator: User, student_no: str, reason: str) -> tuple:
+    from .checkin import is_checkin_open
+    from .models import CheckinRecord
+
+    activity = (
+        Activity.objects.select_for_update()
+        .filter(pk=activity_id, is_deleted=False)
+        .first()
+    )
+    if not activity:
+        raise BusinessError("活动不存在", 30004, status.HTTP_404_NOT_FOUND)
+    ensure_can_manage_roster(operator, activity)
+    if activity.checkin_mode == Activity.CheckinMode.NONE:
+        raise BusinessError("该活动无需签到", 40013, status.HTTP_409_CONFLICT)
+    if not is_checkin_open(activity):
+        raise BusinessError("当前不在签到时间内", 40010, status.HTTP_409_CONFLICT)
+    if len(reason.strip()) < 2:
+        raise BusinessError("手动补签必须填写至少 2 个字的原因", 40014, status.HTTP_400_BAD_REQUEST)
+
+    student = User.objects.filter(student_no=student_no.strip(), is_deleted=False).first()
+    if not student:
+        raise BusinessError("未找到该学号的用户", 40015, status.HTTP_404_NOT_FOUND)
+    signup = (
+        Signup.objects.select_for_update()
+        .filter(activity=activity, user=student)
+        .first()
+    )
+    if not signup or signup.status not in {Signup.Status.SUCCESS, Signup.Status.CHECKED_IN}:
+        raise BusinessError("该学生没有成功报名此活动", 40012, status.HTTP_409_CONFLICT)
+    if signup.status == Signup.Status.CHECKED_IN or CheckinRecord.objects.filter(signup=signup).exists():
+        raise BusinessError("该学生已签到，请勿重复操作", 40003, status.HTTP_409_CONFLICT)
+
+    try:
+        with transaction.atomic():
+            record = CheckinRecord.objects.create(
+                signup=signup,
+                activity=activity,
+                user=student,
+                method=CheckinRecord.Method.MANUAL,
+                operator=operator,
+                reason=reason.strip()[:255],
+                device_info=f"manual by {operator.student_no}",
+            )
+    except IntegrityError:
+        raise BusinessError(
+            "该学生已签到，请勿重复操作", 40003, status.HTTP_409_CONFLICT
+        ) from None
+    signup.status = Signup.Status.CHECKED_IN
+    signup.save(update_fields=["status", "updated_at"])
+    count = CheckinRecord.objects.filter(activity=activity).count()
+    return record, count
+
+
+def get_checkin_code(activity: Activity, user) -> dict:
+    from .checkin import checkin_window, generate_code, qr_content
+
+    ensure_can_manage_roster(user, activity)
+    if activity.status != Activity.Status.PUBLISHED:
+        raise BusinessError("只有已发布活动可以生成签到码", 30001, status.HTTP_409_CONFLICT)
+    if activity.checkin_mode == Activity.CheckinMode.NONE:
+        raise BusinessError("该活动无需签到", 40013, status.HTTP_409_CONFLICT)
+    code, expires_at = generate_code(activity)
+    window_start, window_end = checkin_window(activity)
+    return {
+        "activity_id": activity.pk,
+        "code": code,
+        "qr_content": qr_content(activity, code),
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "server_time": timezone.now().isoformat(),
+        "checkin_mode": activity.checkin_mode,
+        "checkin_mode_text": activity.get_checkin_mode_display(),
+        "checkin_window_start": window_start.isoformat(),
+        "checkin_window_end": window_end.isoformat(),
+        "checked_in_count": activity.checkin_records.count(),
+        "signup_count": activity.signup_count,
+    }
