@@ -2,6 +2,14 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.accounts.models import Role, User
+from apps.accounts.services import issue_tokens
+
+
+def authenticated_client(user):
+    client = APIClient()
+    tokens = issue_tokens(user)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+    return client
 
 
 @pytest.fixture
@@ -35,6 +43,18 @@ def organizer_user(db):
 
 
 @pytest.fixture
+def another_organizer_user(db):
+    user = User.objects.create_user(
+        student_no="T2026002",
+        password="CampusHub123",
+        real_name="许老师",
+        college="艺术学院",
+    )
+    user.roles.add(Role.objects.get(code="ORGANIZER"))
+    return user
+
+
+@pytest.fixture
 def auditor_user(db):
     user = User.objects.create_user(
         student_no="A2026001",
@@ -58,18 +78,25 @@ def admin_user(db):
 
 
 @pytest.fixture
-def auth_client(api_client, student_user):
-    from apps.accounts.services import issue_tokens
-
-    tokens = issue_tokens(student_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
-    return api_client
+def auth_client(student_user):
+    return authenticated_client(student_user)
 
 
 @pytest.fixture
-def organizer_client(api_client, organizer_user):
-    from apps.accounts.services import issue_tokens
+def organizer_client(organizer_user):
+    return authenticated_client(organizer_user)
 
-    tokens = issue_tokens(organizer_user)
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
-    return api_client
+
+@pytest.fixture
+def another_organizer_client(another_organizer_user):
+    return authenticated_client(another_organizer_user)
+
+
+@pytest.fixture
+def auditor_client(auditor_user):
+    return authenticated_client(auditor_user)
+
+
+@pytest.fixture
+def admin_client(admin_user):
+    return authenticated_client(admin_user)

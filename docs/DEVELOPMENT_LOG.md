@@ -30,3 +30,34 @@ pytest: 15 passed
 ```
 
 覆盖点：统一响应与请求 ID、API 404、注册、重复学号、密码一致性、登录、错误密码、禁用账号、刷新令牌轮换、登出后 Access/Refresh 均失效、个人资料、修改密码、RBAC 越权、管理员筛选用户、管理员改角色、禁止自禁用。
+
+## 2026-10-21 · 活动域与审核流
+
+### 做了什么
+
+- 新增社团、活动分类、标签、活动、审核记录与收藏模型，活动状态覆盖草稿/待审核/已发布/已结束/已取消/已驳回。
+- 实现活动公开检索（关键词/分类/标签/日期/时间范围/热度排序/分页）、详情浏览、浏览计数与收藏。
+- 实现主办方创建活动草稿、编辑活动、提交审核、取消/下架活动；首次发布自动创建主办方社团空间。
+- 实现审核员待审列表、通过/驳回，驳回强制填写意见，审核记录只增不改；重复审核返回冲突提示。
+- 已发布活动仅允许修改简介、详情、封面与标签，关键信息变更被服务层拦截。
+- 增加 6 个活动分类与 4 个标签的种子数据，并完成主办方/审核员数据级权限校验。
+
+### 改动位置
+
+- 模型：`apps/clubs/models.py`、`apps/activities/models.py`
+- 查询与业务：`apps/activities/repositories.py`、`apps/activities/services.py`
+- 序列化与接口：`apps/activities/serializers.py`、`apps/activities/views.py`、`apps/activities/urls.py`
+- 管理后台：`apps/clubs/admin.py`、`apps/activities/admin.py`
+- 迁移：`apps/clubs/migrations/0001_initial.py`、`apps/activities/migrations/0001_initial.py`、`apps/activities/migrations/0002_seed_categories.py`
+- 路由：`config/urls.py`
+- 测试：`tests/test_activities.py`
+
+### 验证
+
+```text
+Django system check: 0 issues
+pytest: 28 passed
+ruff: All checks passed
+```
+
+覆盖点：主办方创建草稿与自动建社团、学生创建拦截、时间合法性、提交审核、审核列表、通过发布、驳回意见校验、驳回后重新提交、非本人编辑拦截、已发布字段限制、公开检索筛选排序、详情浏览量、收藏幂等/取消收藏、草稿对外隐藏、取消原因校验、分类标签公开读取。

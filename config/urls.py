@@ -16,6 +16,7 @@ urlpatterns = [
         name="api-docs",
     ),
     path("api/v1/", include("apps.accounts.urls")),
+    path("api/v1/", include("apps.activities.urls")),
 ]
 
 handler404 = "common.exceptions.api_not_found_view"
